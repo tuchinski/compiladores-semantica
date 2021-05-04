@@ -22,12 +22,14 @@ variaveis_declaradas = []
 variaveis_utilzadas = []
 escopo_atual = "global"
 escopo_antigo = ""
+verifica_se = False
 
 
 # Funcao que analisa a arvore toda
 def analisa_arvore(raiz):
     if raiz:
         filhos = raiz.children
+        global verifica_se
         if raiz.name == "declaracao_variaveis":
             print("declaração variável")
             declaracao_variavel(raiz)
@@ -36,9 +38,13 @@ def analisa_arvore(raiz):
             declaracao_funcao(raiz)
             print(funcoes)
         elif raiz.name == 'fim':
-            print("fim")
-            verifica_retorno_funcao_atual()
-            sai_escopo()
+            if verifica_se:
+                print("fim se")
+                verifica_se = False
+            else:
+                print("fim função")
+                verifica_retorno_funcao_atual()
+                sai_escopo()
         elif raiz.name == 'atribuicao':
             print("atribuição")
             atrib_node = atribuicao(raiz)
@@ -52,9 +58,24 @@ def analisa_arvore(raiz):
         elif raiz.name == 'chamada_funcao':
             print("chamada funcao")
             verifica_chamada_funcao(raiz)
+        elif raiz.name == "escreva":
+            print("escreva")
+            verifica_escreva(raiz)
+            return
+        elif raiz.name == "se":
+            print("se")
+            verifica_se = True
+
+
 
         for filho in filhos:
             analisa_arvore(filho)
+
+
+def verifica_escreva(node):
+    expressao_escreva = node.children[2]
+    expressao_resolvida = resolve_expressao(expressao_escreva, None, None)
+    return
 
 
 def verifica_chamada_funcao(raiz):
@@ -91,6 +112,7 @@ def verifica_chamada_funcao(raiz):
     if returnErro:
         return False
     else:
+        funcoes[id_funcao]["utilizada"] = True
         return True
 
     print(args_passados)
@@ -110,22 +132,28 @@ def verifica_lista_argumentos(node):
 
 def verifica_retorno_funcao_atual():
     funcao_atual = funcoes[escopo_atual]
-    if not funcao_atual['retornou']:
+    if not funcao_atual['retornou'] and funcao_atual['tipo'] != "vazio":
         global mensagens_erro
         mensagens_erro.append(
-            "Erro: Função {} deveria retornar {}, mas retorna vazio".format(escopo_atual, funcao_atual["tipo"]))
+            "Erro: Função '{}' deveria retornar {}, mas retorna vazio".format(escopo_atual, funcao_atual["tipo"]))
     return
 
 
 def retorna(raiz):
     expressao_retorna = raiz.children[2]
     retorno_expressao = resolve_expressao(expressao_retorna, None, None)
+
+    global mensagens_erro
+    global funcoes
     tipo_var_retorno = retorno_expressao.type
+    if tipo_var_retorno == 'error':
+        mensagens_erro.append("Erro: Não é possível executar retorno da funcão '{}'.".format(escopo_atual))
+        funcoes[escopo_atual]['retornou'] = True
+        return
     tipo_retorno_esperado = funcoes[escopo_atual]['tipo']
     if tipo_var_retorno.lower() != tipo_retorno_esperado.lower():
-        global mensagens_erro
-        mensagens_erro.append("Erro: Função principal deveria retornar {}, mas retorna {}".format(tipo_retorno_esperado,
-                                                                                                  tipo_var_retorno))
+        mensagens_erro.append("Erro: Função '{}' deveria retornar {}, mas retorna {}".format(escopo_atual, tipo_retorno_esperado,
+                                                                                             tipo_var_retorno))
     funcoes[escopo_atual]['retornou'] = True
     return
 
@@ -152,7 +180,7 @@ def atribuicao(node):
 
     if not variavel_atual_declarada:
         global mensagens_erro
-        mensagens_erro.append('Variável {} não declarada'.format(id_atribuicao))
+        mensagens_erro.append('Erro: Variável \'{}\' não declarada1'.format(id_atribuicao))
         return
 
     node_novo = MyNode(name=':=', type=":=")
@@ -161,6 +189,9 @@ def atribuicao(node):
 
     expressao_resolvida = resolve_expressao(expressao, tipo_var, id_atribuicao)
 
+    indice = verifica_variavel_declarada_por_nome(id_atribuicao)
+
+    variaveis_declaradas[indice]['inicializado'] = True
 
 
     expressao_resolvida.parent = node_novo
@@ -264,11 +295,13 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
             nome_var = variaveis_declaradas[index_variavel]["lexema"]
             tipo_var_expressao = variaveis_declaradas[index_variavel]["tipo"]
             if tipo_var is not None and tipo_var_expressao != tipo_var:
-                mensagens_warning.append(
-                    "Aviso: Atribuição de tipos distintos ‘{}’ {} e ‘expressão’ {}".format(id_atrib, tipo_var,
-                                                                                           tipo_var_expressao))
-            if variaveis_declaradas[index_variavel]['usada'] == False:
+                mensagens_warning.append("Aviso: Coerção implícita do valor de '{}'".format(nome_var))
+                # mensagens_warning.append(
+                #     "Aviso: Atribuição de tipos distintos ‘{}’ {} e ‘expressão’ {}1".format(id_atrib, tipo_var,
+                #                                                                            tipo_var_expressao))
+            if variaveis_declaradas[index_variavel]['inicializado'] == False:
                 mensagens_warning.append("Aviso: Variável ‘{}’ declarada e não inicializada em '{}'.".format(nome_var, escopo_atual))
+                variaveis_declaradas[index_variavel]['inicializado'] = True
             variaveis_declaradas[index_variavel]['usada'] = True
             num = MyNode(name=nome_var, type=tipo_var_expressao)
         return num
@@ -281,10 +314,11 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
             tipo_funcao = funcao_chamada['tipo']
             no_func = MyNode(name=id_func + '()', type=tipo_funcao)
 
-            if tipo_funcao.lower() != tipo_var.lower():
-                mensagens_warning.append("Aviso: Atribuição de tipos distintos '{}' flutuante e '{}' retorna inteiro".format(
-                    id_atrib,id_func
-                ))
+            if tipo_var != None and tipo_funcao.lower() != tipo_var.lower():
+                mensagens_warning.append("Aviso: Coerção implícita do valor retornado por '{}'".format(id_func))
+                # mensagens_warning.append("Aviso: Atribuição de tipos distintos '{}' flutuante e '{}' retorna inteiro2".format(
+                #     id_atrib, id_func
+                # ))
 
             return no_func
         else:
@@ -296,8 +330,9 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
         tipo_num = tipos_numeros[tipo_num]
 
         if tipo_var is not None and tipo_num != tipo_var:
-            mensagens_warning.append(
-                "Aviso: Atribuição de tipos distintos ‘{}’ {} e ‘expressão’ {}".format(id_atrib, tipo_var, tipo_num))
+            mensagens_warning.append("Aviso: Coerção implícita do valor atribuído para '{}'".format(id_atrib))
+            # mensagens_warning.append(
+            #     "Aviso: Atribuição de tipos distintos ‘{}’ {} e ‘expressão’ {}3".format(id_atrib, tipo_var, tipo_num))
 
         num = fator.children[0].children[0].children[0].label
         novo_node = MyNode(name=num, type=tipo_num)
@@ -319,11 +354,29 @@ def verifica_variavel_declarada(var):
             i += 1
         else:
             i += 1
-    if standby > 1:
+    if standby >= 0:
         return standby
     else:
         global mensagens_erro
-        mensagens_erro.append('Variável {} não declarada'.format(nome_var))
+        mensagens_erro.append('Erro: Variável \'{}\' não declarada2'.format(nome_var))
+        return -1
+
+def verifica_variavel_declarada_por_nome(nome_var):
+    i = 0
+    standby = -1
+    for var in variaveis_declaradas:
+        if var['lexema'] == nome_var and var['escopo'] == escopo_atual:
+            return i
+        elif var['lexema'] == nome_var and var['escopo'] == 'global':
+            standby = i
+            i += 1
+        else:
+            i += 1
+    if standby >= 0:
+        return standby
+    else:
+        global mensagens_erro
+        mensagens_erro.append('Erro: Variável \'{}\' não declarada3'.format(nome_var))
         return -1
 
 
@@ -418,6 +471,7 @@ def declaracao_funcao(node):
         "id_func": id_func,
         "parametros": [],
         "retornou": False,
+        "utilizada": False,
     }
     lista_parametros = cabecalho.children[2]
     get_lista_parametros_funcao(id_func, lista_parametros)
@@ -497,9 +551,16 @@ def verifica_existe_principal():
         global erro
         erro = True
 
+def verifica_funcoes_utilizadas():
+    for funcao in funcoes:
+        if funcao != "principal":
+            func_atual = funcoes[funcao]
+            if func_atual['utilizada'] == False:
+                mensagens_warning.append("Aviso: Função ‘{}’ declarada, mas não utilizada.".format(funcao))
+
 if __name__ == "__main__":
     if (len(argv) < 2):
-        file = 'semantica-testes/sema-007.tpp'
+        file = 'semantica-testes/sema-019.tpp'
         # print("Erro! Informe o nome do arquivo")
         # exit()
     else:
@@ -515,5 +576,6 @@ if __name__ == "__main__":
         print("---------------------------------")
         verifica_existe_principal()
         verifica_variaveis_usadas()
+        verifica_funcoes_utilizadas()
         print_erro()
         print_warnings()
