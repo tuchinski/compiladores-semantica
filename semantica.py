@@ -3,6 +3,7 @@ from anytree.node import nodemixin
 from mytree import MyNode
 import sintatica as sin
 from sys import argv
+from anytree.exporter import DotExporter, UniqueDotExporter
 
 # !!!!!!!!!!!
 # ATENCAO: TEM QUE INSTALAR O GRAPHVIZ!!!!!!!!
@@ -49,7 +50,8 @@ def analisa_arvore(raiz):
             print("atribuição")
             atrib_node = atribuicao(raiz)
             atrib_node.parent = raiz.parent
-            raiz = atrib_node
+            raiz.parent.children = [atrib_node]
+            # raiz = atrib_node
             return
         elif raiz.name == 'retorna':
             print('retorna')
@@ -83,6 +85,13 @@ def verifica_chamada_funcao(raiz):
 
     global funcoes
     global erro
+
+    if id_funcao == "principal":
+        if escopo_atual != "principal":
+            mensagens_erro.append("Erro: Chamada para a função principal não permitida")
+            return
+        else:
+            mensagens_warning.append("Aviso: Chamada recursiva para principal")
     if id_funcao not in funcoes.keys():
         mensagens_erro.append('Erro: Chamada a função \'{}\' que não foi declarada.'.format(id_funcao))
         erro = True
@@ -181,7 +190,7 @@ def atribuicao(node):
     if not variavel_atual_declarada:
         global mensagens_erro
         mensagens_erro.append('Erro: Variável \'{}\' não declarada1'.format(id_atribuicao))
-        return
+
 
     node_novo = MyNode(name=':=', type=":=")
     node_var = MyNode(name=id_atribuicao, type=tipo_var)
@@ -191,7 +200,8 @@ def atribuicao(node):
 
     indice = verifica_variavel_declarada_por_nome(id_atribuicao)
 
-    variaveis_declaradas[indice]['inicializado'] = True
+    if indice != -1:
+        variaveis_declaradas[indice]['inicializado'] = True
 
 
     expressao_resolvida.parent = node_novo
@@ -290,8 +300,12 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
         var = fator.children[0]
         index_variavel = verifica_variavel_declarada(var)
         if index_variavel < 0:
-            num = MyNode(name="error", type='error')
+            nome_var_erro = fator.children[0].children[0].children[0].label
+            num = MyNode(name=nome_var_erro, type='error')
+
         else:
+
+
             nome_var = variaveis_declaradas[index_variavel]["lexema"]
             tipo_var_expressao = variaveis_declaradas[index_variavel]["tipo"]
             if tipo_var is not None and tipo_var_expressao != tipo_var:
@@ -393,6 +407,21 @@ def insere_lista_variaveis(tipo, lista_variaveis):
         erro_variavel = False
         if filho.label == 'var':  # se entrar aqui já é a variável
             id_variavel = filho.children[0].children[0].label
+            try:
+                # aqui a gente ta vendo se a variável tem indice
+                indice = filho.children[1]
+                expressao_indice = indice.children[1]
+                exp_resolvida_indice = resolve_expressao(expressao_indice,tipo,None)
+
+                if exp_resolvida_indice.type != 'INTEIRO':
+                    mensagens_erro.append("Erro: índice de array '{}' não inteiro1".format(id_variavel))
+
+
+            except:
+                print("segue a vida")
+
+
+
             for var in variaveis_declaradas:
                 if var['lexema'] == id_variavel and (var['escopo'] == escopo_atual):# or var['escopo'] == 'global'):
                     mensagens_warning.append("Aviso: Variável \"{}\" já declarada anteriormente".format(id_variavel))
@@ -407,11 +436,12 @@ def insere_lista_variaveis(tipo, lista_variaveis):
                 # pode ser array ou matriz
                 indice = filho.children[1]
                 if len(indice.children) == 3:
+                    # é array
                     expressao_indice_array = indice.children[1]
                     expressao_resolvida = resolve_expressao(expressao_indice_array, None, None)
                     tipo_expressao = expressao_resolvida.type
-                    if tipo_expressao != "INTEIRO":
-                        mensagens_erro.append("Erro: índice de array '{}' não inteiro".format(id_variavel))
+                    # if tipo_expressao != "INTEIRO":
+                    #     mensagens_erro.append("Erro: índice de array '{}' não inteiro2".format(id_variavel))
                     dim = 1
                     dim1 = expressao_resolvida.label
                     dim2 = 0
@@ -560,7 +590,7 @@ def verifica_funcoes_utilizadas():
 
 if __name__ == "__main__":
     if (len(argv) < 2):
-        file = 'semantica-testes/sema-019.tpp'
+        file = 'semantica-testes/sema-002.tpp'
         # print("Erro! Informe o nome do arquivo")
         # exit()
     else:
@@ -579,3 +609,18 @@ if __name__ == "__main__":
         verifica_funcoes_utilizadas()
         print_erro()
         print_warnings()
+        print("---------------------------------")
+        if raiz and raiz.children != () :
+            print("Generating Syntax Tree Graph...")
+            # DotExporter(raiz).to_picture(argv[1] + ".ast.png")
+            UniqueDotExporter(raiz).to_picture(argv[1] + ".unique.ast.png")
+            # DotExporter(root).to_dotfile(argv[1] + ".ast.dot")
+            # UniqueDotExporter(root).to_dotfile(argv[1] + ".unique.ast.dot")
+            # print(RenderTree(root, style=AsciiStyle()).by_attr())
+            print("Graph was generated.\nOutput file: " + argv[1] + ".ast.png")
+
+            # DotExporter(root, graph="graph",
+            #             nodenamefunc=MyNode.nodenamefunc,
+            #             nodeattrfunc=lambda node: 'label=%s' % (node.type),
+            #             edgeattrfunc=MyNode.edgeattrfunc,
+            #             edgetypefunc=MyNode.edgetypefunc).to_picture(argv[1] + ".ast2.png")
