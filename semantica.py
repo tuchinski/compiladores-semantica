@@ -55,32 +55,88 @@ def analisa_arvore(raiz):
             return
         elif raiz.name == 'retorna':
             print('retorna')
-            retorna(raiz)
+            nodes_novo = retorna(raiz)
+            nodes_novo.parent = raiz.parent
+            raiz.children = [nodes_novo]
             return
         elif raiz.name == 'chamada_funcao':
+            node_novo = verifica_chamada_funcao(raiz, True)
+            pai = raiz.anchestors[-7]
+            pai.name = "chamada_funcao"
+            pai.children = [node_novo]
             print("chamada funcao")
-            verifica_chamada_funcao(raiz)
+            return
+
         elif raiz.name == "escreva":
             print("escreva")
-            verifica_escreva(raiz)
+            node_novo = verifica_escreva(raiz)
+            node_novo.parent = raiz.parent
+            raiz.children = [node_novo]
+            return
+        elif raiz.name == "leia":
+            print("leia")
+            node_novo = verifica_leia(raiz)
+            node_novo.parent = raiz.parent
+            raiz.children = [node_novo]
             return
         elif raiz.name == "se":
             print("se")
             verifica_se = True
-
-
+            analisa_se(raiz)
+            return
+        elif raiz.name == "repita":
+            verifica_repita(raiz)
+            return
 
         for filho in filhos:
             analisa_arvore(filho)
 
+def verifica_repita(node):
+    corpo = node.children[1]
+    expressao = node.children[3]
+
+    expressao_resolvida = resolve_expressao(expressao, None, None)
+    expressao.children = [expressao_resolvida]
+
+    analisa_arvore(corpo)
+
+
+def verifica_leia(node):
+    expressao_leia = node.children[2]
+    nome_var = expressao_leia.children[0].children[0].label
+    for var in variaveis_declaradas:
+        if var["lexema"] == nome_var and escopo_atual == var["escopo"]:
+            var["inicializado"] = True
+
+    for var in variaveis_declaradas:
+        if var["lexema"] == nome_var and "global" == var["escopo"]:
+            var["inicializado"] = True
+
+    return expressao_leia
+
+def analisa_se(node):
+    expressao_se = node.children[1]
+    retorno_expressao_se = resolve_expressao(expressao_se, None, None)
+
+    retorno_expressao_se.parent = expressao_se
+
+    expressao_se.children = [retorno_expressao_se]
+
+    corpo_se = node.children[3]
+    analisa_arvore(corpo_se)
+
+    if len(node.children) == 7:
+        # tem senao
+        corpo_senao = node.children[5]
+        analisa_arvore(corpo_senao)
 
 def verifica_escreva(node):
     expressao_escreva = node.children[2]
     expressao_resolvida = resolve_expressao(expressao_escreva, None, None)
-    return
+    return expressao_resolvida
 
 
-def verifica_chamada_funcao(raiz):
+def verifica_chamada_funcao(raiz, retorna_arvore):
     id_funcao = raiz.children[0].children[0].label
 
     global funcoes
@@ -92,10 +148,16 @@ def verifica_chamada_funcao(raiz):
             return
         else:
             mensagens_warning.append("Aviso: Chamada recursiva para principal")
+
+    # # aqui a gente ta otimizando a arvore
+    # expressao_node = raiz.anchestors[-7]
+    # raiz.parent = expressao_node.parent
+    # expressao_node.parent = None
+
     if id_funcao not in funcoes.keys():
         mensagens_erro.append('Erro: Chamada a função \'{}\' que não foi declarada.'.format(id_funcao))
         erro = True
-        return
+        return raiz
 
     lista_args = raiz.children[2]
     args_esperados = funcoes[id_funcao]['parametros']
@@ -122,7 +184,12 @@ def verifica_chamada_funcao(raiz):
         return False
     else:
         funcoes[id_funcao]["utilizada"] = True
-        return True
+        if not retorna_arvore:
+            return True
+        else:
+            tipo_fun = funcoes[id_funcao]['tipo']
+            node = MyNode(name=id_funcao+"()",type=tipo_fun, id="chamada_funcao-" + tipo_fun)
+            return node
 
     print(args_passados)
 
@@ -164,7 +231,7 @@ def retorna(raiz):
         mensagens_erro.append("Erro: Função '{}' deveria retornar {}, mas retorna {}".format(escopo_atual, tipo_retorno_esperado,
                                                                                              tipo_var_retorno))
     funcoes[escopo_atual]['retornou'] = True
-    return
+    return retorno_expressao
 
 
 def atribuicao(node):
@@ -211,7 +278,9 @@ def atribuicao(node):
 
 def resolve_expressao(exp, tipo_var, id_atrib):
     if exp.children[0].label == "expressao_logica":
-        return resolve_expressao_logica(exp.children[0], tipo_var, id_atrib)
+        a = resolve_expressao_logica(exp.children[0], tipo_var, id_atrib)
+
+        return a
 
     elif exp.children[0].label == 'atribuicao':
         print('atribuicao - expressao')
@@ -235,7 +304,42 @@ def resolve_expressao_simples(exp, tipo_var, id_atrib):
 
         a1 = resolve_expressao_simples(filho_esq, tipo_var, id_atrib)
         a3 = resolve_expressao_aditiva(filho_dir, tipo_var, id_atrib)
-        print("entrou no else de expressao simples, tem que resover aqui!!!!!!!!")
+
+        tipo_a1 = a1.type
+        tipo_a3 = a3.type
+
+        if tipo_a3 == tipo_a1:
+            tipo_operacao = tipo_a3
+        else:
+            tipo_operacao = "FLUTUANTE"
+
+        nome_operador = exp.children[1].children[0].label
+        if nome_operador == "MAIOR":
+            node_operacao = MyNode(name=">", type=tipo_operacao)
+            node_operacao.id = ">-" + tipo_operacao
+        elif nome_operador == "MENOR":
+            node_operacao = MyNode(name="<", type=tipo_operacao)
+            node_operacao.id = "<-" + tipo_operacao
+        elif nome_operador == "IGUAL":
+            node_operacao = MyNode(name="=", type=tipo_operacao)
+            node_operacao.id = "=-" + tipo_operacao
+        elif nome_operador == "DIFERENTE":
+            node_operacao = MyNode(name="<>", type=tipo_operacao)
+            node_operacao.id = "<>-" + tipo_operacao
+        elif nome_operador == "MENOR_IGUAL":
+            node_operacao = MyNode(name="<=", type=tipo_operacao)
+            node_operacao.id = "<=-" + tipo_operacao
+        elif nome_operador == "MAIOR_IGUAL":
+            node_operacao = MyNode(name=">=", type=tipo_operacao)
+            node_operacao.id = ">=-" + tipo_operacao
+
+
+        a1.parent = node_operacao
+        a3.parent = node_operacao
+
+        return node_operacao
+
+        # print("entrou no else de expressao simples, tem que resover aqui!!!!!!!!")
 
 
 def resolve_expressao_aditiva(exp, tipo_var, id_atrib):
@@ -256,9 +360,16 @@ def resolve_expressao_aditiva(exp, tipo_var, id_atrib):
         else:
             tipo_operacao = "FLUTUANTE"
 
-        node_adicao = MyNode(name="+", type=tipo_operacao)
+        nome_operador = exp.children[1].children[0].label
+        if nome_operador == "MAIS":
+            node_adicao = MyNode(name="+", type=tipo_operacao)
+        elif nome_operador == "MENOS":
+            node_adicao = MyNode(name="-", type=tipo_operacao)
+
+
         a1.parent = node_adicao
         a3.parent = node_adicao
+        node_adicao.id = "+-" + tipo_operacao
         return node_adicao
 
 
@@ -283,6 +394,7 @@ def resolve_expressao_multiplicativa(exp, tipo_var, id_atrib):
         node_multiplicacao = MyNode(name="*", type=tipo_operacao)
         a1.parent = node_multiplicacao
         a3.parent = node_multiplicacao
+        node_adicao.id = "+-" + tipo_operacao
 
         return node_multiplicacao
 
@@ -304,8 +416,6 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
             num = MyNode(name=nome_var_erro, type='error')
 
         else:
-
-
             nome_var = variaveis_declaradas[index_variavel]["lexema"]
             tipo_var_expressao = variaveis_declaradas[index_variavel]["tipo"]
             if tipo_var is not None and tipo_var_expressao != tipo_var:
@@ -318,15 +428,18 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
                 variaveis_declaradas[index_variavel]['inicializado'] = True
             variaveis_declaradas[index_variavel]['usada'] = True
             num = MyNode(name=nome_var, type=tipo_var_expressao)
+            num.id = "var-"+tipo_var_expressao
         return num
 
     elif fator.children[0].label == 'chamada_funcao':
-        if verifica_chamada_funcao(fator.children[0]):
+        if verifica_chamada_funcao(fator.children[0],False):
+            # id_func = fator.children[0]
             id_func = fator.children[0].children[0].children[0].label
 
             funcao_chamada = funcoes[id_func]
             tipo_funcao = funcao_chamada['tipo']
             no_func = MyNode(name=id_func + '()', type=tipo_funcao)
+            no_func.id = "chamada_funcao-" + tipo_funcao
 
             if tipo_var != None and tipo_funcao.lower() != tipo_var.lower():
                 mensagens_warning.append("Aviso: Coerção implícita do valor retornado por '{}'".format(id_func))
@@ -350,6 +463,7 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
 
         num = fator.children[0].children[0].children[0].label
         novo_node = MyNode(name=num, type=tipo_num)
+        novo_node.id = "numero-"+tipo_num
         return novo_node
 
     elif fator.children[1].label == "expressao":
@@ -588,15 +702,7 @@ def verifica_funcoes_utilizadas():
             if func_atual['utilizada'] == False:
                 mensagens_warning.append("Aviso: Função ‘{}’ declarada, mas não utilizada.".format(funcao))
 
-if __name__ == "__main__":
-    if (len(argv) < 2):
-        file = 'semantica-testes/sema-002.tpp'
-        # print("Erro! Informe o nome do arquivo")
-        # exit()
-    else:
-        file = argv[1]
-    data = file
-
+def semantica_main(data):
     raiz = sin.retorna_root(data)
     if raiz is None:
         print("Árvore não foi gerada!")
@@ -610,17 +716,22 @@ if __name__ == "__main__":
         print_erro()
         print_warnings()
         print("---------------------------------")
-        if raiz and raiz.children != () :
-            print("Generating Syntax Tree Graph...")
-            # DotExporter(raiz).to_picture(argv[1] + ".ast.png")
-            UniqueDotExporter(raiz).to_picture(argv[1] + ".unique.ast.png")
-            # DotExporter(root).to_dotfile(argv[1] + ".ast.dot")
-            # UniqueDotExporter(root).to_dotfile(argv[1] + ".unique.ast.dot")
-            # print(RenderTree(root, style=AsciiStyle()).by_attr())
-            print("Graph was generated.\nOutput file: " + argv[1] + ".ast.png")
+        if raiz and raiz.children != ():
+            try:
+                print("Generating Syntax Tree Graph...")
+                UniqueDotExporter(raiz).to_picture(argv[1] + ".unique.ast.png")
+                print("Graph was generated.\nOutput file: " + argv[1] + ".ast.png")
+            except IndexError:
+                print("Generating Syntax Tree Graph... v2")
+                UniqueDotExporter(raiz).to_picture("arvoregerada.unique.ast.png")
+                print("Graph was generated.\nOutput file: " + " arvoregerada.ast.png")
+        return raiz
 
-            # DotExporter(root, graph="graph",
-            #             nodenamefunc=MyNode.nodenamefunc,
-            #             nodeattrfunc=lambda node: 'label=%s' % (node.type),
-            #             edgeattrfunc=MyNode.edgeattrfunc,
-            #             edgetypefunc=MyNode.edgetypefunc).to_picture(argv[1] + ".ast2.png")
+
+if __name__ == "__main__":
+    if (len(argv) < 2):
+        file = 'geracao-codigo-testes/testesimples.tpp'
+    else:
+        file = argv[1]
+    data = file
+    semantica_main(data)

@@ -804,8 +804,10 @@ def p_error(p):
 def main():
     if (len(argv) < 2):
         print("Erro! Informe o nome do arquivo")
-        exit()
-    data = open(argv[1])
+        data = open("semantica-testes/sema-003.tpp")
+        # exit()
+    else:
+        data = open(argv[1])
 
     source_file = data.read()
     parser.parse(source_file)
