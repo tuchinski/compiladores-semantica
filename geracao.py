@@ -7,6 +7,7 @@ from llvmlite import binding as llvm
 
 lista_ponteiros_funcoes = []
 lista_ponteiros_variaveis = []
+lista_parametros_funcoes = {}
 cont_se = 0
 cont_repita = 0
 
@@ -70,6 +71,25 @@ def percorre_arvore(node, modulo):
             percorre_arvore(filho, modulo)
 
 
+def analisa_parametros_func(id_func, parametros_fun, builder):
+    lista_parametros_funcoes[id_func] = []
+    for param in parametros_fun:
+        lista_parametros_funcoes[id_func].append({
+            "id": param.name,
+            "tipo": param.type
+        })
+        if param.type.lower() == "inteiro":
+            variavel = builder.alloca(ir.IntType(32), name=param.name)
+        elif param.type.lower() == "flutuante":
+            variavel = builder.alloca(ir.FloatType(), name=param.name)
+
+        variavel.linkage = "common"
+        variavel.align = 4
+        lista_ponteiros_variaveis.append(variavel)
+        # lista_parametros_funcoes[id_func][0]["ponteiros"] = []
+        # lista_parametros_funcoes[id_func][0]["ponteiros"].append(variavel)
+
+
 def declaracao_funcao(no, modulo):
     cabecalho = no.children[1]
     tipo_retorno_func = no.children[0].children[0].label
@@ -84,11 +104,14 @@ def declaracao_funcao(no, modulo):
 
     parametros_fun = cabecalho.children[2]
 
+    a = ir.IntType(32)
+    b = ir.IntType(32)
     tipo_da_funcao = ir.FunctionType(tipo_de_retorno, [])
     funcao = ir.Function(modulo, tipo_da_funcao, name=id_func)
     lista_ponteiros_funcoes.append(funcao)
     bloco_de_entrada = funcao.append_basic_block('%s.start' % id_func)
     builder = ir.IRBuilder(bloco_de_entrada)
+    analisa_parametros_func(id_func, parametros_fun.children, builder)
     retorna = builder.alloca(tipo_de_retorno, name='return')
     retorna.align = 4
     lista_ponteiros_variaveis.append(retorna)
@@ -317,7 +340,24 @@ def resolve_expressao(node, modulo, builder):
             return ir.Constant(ir.FloatType(), valor_num)
 
     elif tipo_nome == "chamada_funcao":
-        pass
+        func_id = node.name.split("()")[0]
+        params_func = lista_parametros_funcoes[func_id]
+        params_recebidos = node.children
+
+        params_resolvidos = []
+
+        for func in lista_ponteiros_funcoes:
+            if func.name == func_id:
+                func_atual = func
+                break
+
+        for i in range(0, len(params_recebidos)):
+            param_resolvido = resolve_expressao(params_recebidos[i], modulo, builder)
+            params_resolvidos.append(param_resolvido)
+
+
+        # return builder.call(func_atual, params_resolvidos)
+        return builder.call(func_atual, [])
 
     elif tipo_nome == "var":
         var_id = node.label
@@ -341,7 +381,7 @@ def resolve_expressao(node, modulo, builder):
         if tipo_filho_esq == "var":
             i = 0
             while i < len(lista_ponteiros_variaveis):
-                if str(lista_ponteiros_variaveis[i].name) == valor_filho_esquerda:
+                if lista_ponteiros_variaveis[i].name == valor_filho_esquerda:
                     filho_esquerda = lista_ponteiros_variaveis[i]
                 i = i + 1
             var_temp_esq = builder.load(filho_esquerda, name='varTempLedt')
@@ -349,7 +389,7 @@ def resolve_expressao(node, modulo, builder):
         if tipo_filho_dir == "var":
             i = 0
             while i < len(lista_ponteiros_variaveis):
-                if str(lista_ponteiros_variaveis[i].name) == valor_filho_direita:
+                if lista_ponteiros_variaveis[i].name == valor_filho_direita:
                     filho_direita = lista_ponteiros_variaveis[i]
                 i = i + 1
             var_temp_dir = builder.load(filho_direita, name='varTempRight')

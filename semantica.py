@@ -38,6 +38,7 @@ def analisa_arvore(raiz):
             print("declaração funcao")
             declaracao_funcao(raiz)
             print(funcoes)
+
         elif raiz.name == 'fim':
             if verifica_se:
                 print("fim se")
@@ -74,7 +75,7 @@ def analisa_arvore(raiz):
             raiz.children = [node_novo]
             return
         elif raiz.name == "leia":
-            print("leia")
+            print("leoa")
             node_novo = verifica_leia(raiz)
             node_novo.parent = raiz.parent
             raiz.children = [node_novo]
@@ -394,7 +395,7 @@ def resolve_expressao_multiplicativa(exp, tipo_var, id_atrib):
         node_multiplicacao = MyNode(name="*", type=tipo_operacao)
         a1.parent = node_multiplicacao
         a3.parent = node_multiplicacao
-        node_adicao.id = "+-" + tipo_operacao
+        node_multiplicacao.id = "*-" + tipo_operacao
 
         return node_multiplicacao
 
@@ -436,10 +437,16 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
             # id_func = fator.children[0]
             id_func = fator.children[0].children[0].children[0].label
 
+            lista_args = fator.children[0].children[2]
+            arvore_lista_args = resolve_lista_args_func(lista_args)
+
             funcao_chamada = funcoes[id_func]
             tipo_funcao = funcao_chamada['tipo']
             no_func = MyNode(name=id_func + '()', type=tipo_funcao)
             no_func.id = "chamada_funcao-" + tipo_funcao
+
+            for no in arvore_lista_args:
+                no.parent = no_func
 
             if tipo_var != None and tipo_funcao.lower() != tipo_var.lower():
                 mensagens_warning.append("Aviso: Coerção implícita do valor retornado por '{}'".format(id_func))
@@ -468,6 +475,19 @@ def resolve_expressao_unaria(exp, tipo_var, id_atrib):
 
     elif fator.children[1].label == "expressao":
         return resolve_expressao(fator.children[1], tipo_var, id_atrib)
+
+
+
+def resolve_lista_args_func(lista_args):
+    argumentos = lista_args.children
+    lista_args = []
+    for arg in argumentos:
+        if arg.label == "lista_argumentos":
+            lista_args += resolve_lista_args_func(arg)
+        elif arg.label == "expressao":
+            exp_resolvida = resolve_expressao(arg, None, None)
+            lista_args.append(exp_resolvida)
+    return lista_args
 
 
 def verifica_variavel_declarada(var):
@@ -619,6 +639,17 @@ def declaracao_funcao(node):
     }
     lista_parametros = cabecalho.children[2]
     get_lista_parametros_funcao(id_func, lista_parametros)
+
+    array_params = []
+
+    lista_parametros.children = []
+
+    lista_par_funcao = funcoes[id_func]["parametros"]
+    for param in lista_par_funcao:
+        node_param_atual = MyNode(name=param["id"], type=param["tipo"], id=param["tipo"]+"-parametro")
+        node_param_atual.parent = lista_parametros
+        array_params.append(node)
+
 
 
 def get_lista_parametros_funcao(id_funcao, node):
